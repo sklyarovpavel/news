@@ -22,7 +22,7 @@ yarn.lock
 webpack.generated.js
 vite.generated.ts
 .vaadin/
-
+.env
 # OS
 .DS_Store
 Thumbs.db
