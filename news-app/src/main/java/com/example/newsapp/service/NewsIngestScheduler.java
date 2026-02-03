@@ -4,6 +4,7 @@ import com.example.newsapp.domain.ResourceItem;
 import com.example.newsapp.domain.MessageEntity;
 import com.example.newsapp.domain.MessageStatus;
 import com.example.newsapp.llm.NewsClassifier;
+import com.example.newsapp.llm.NewsSummarizer;
 import com.example.newsapp.repositories.MessageRepository;
 import com.example.newsapp.repositories.ResourceItemRepository;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -35,14 +36,13 @@ public class NewsIngestScheduler {
     private static final Logger log = LoggerFactory.getLogger(NewsIngestScheduler.class);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
+    private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final NewsClassifier classifier;
     private final MessageRepository messageRepository;
     private final ResourceItemRepository resourceItemRepository;
+    private final NewsSummarizer summarizer;
 
     @Value("${app.news.enabled:true}")
     private boolean enabled;
@@ -53,36 +53,59 @@ public class NewsIngestScheduler {
     @Value("${app.news.authorUsername:news-bot}")
     private String authorUsername;
 
+    @Value("${app.news.requestTimeoutMs:300000}")
+    private long requestTimeoutMs;
+
     public NewsIngestScheduler(NewsClassifier classifier,
                                MessageRepository messageRepository,
-                               ResourceItemRepository resourceItemRepository) {
+                               ResourceItemRepository resourceItemRepository,
+                               NewsSummarizer summarizer) {
         this.classifier = classifier;
         this.messageRepository = messageRepository;
         this.resourceItemRepository = resourceItemRepository;
+        this.summarizer = summarizer;
+        long ctMs = Math.max(1_000L, requestTimeoutMs);
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(ctMs))
+                .build();
     }
 
     @Scheduled(fixedDelayString = "${app.news.fixedDelayMs:60000}")
     @Transactional
     public void fetchAndIngest() {
         if (!enabled) {
+            log.info("NewsIngest: disabled, skip cycle");
             return;
         }
         List<ResourceItem> resources = resourceItemRepository.findAll();
-        if (resources.isEmpty()) return;
+        if (resources.isEmpty()) {
+            log.info("NewsIngest: no resources found, skip cycle");
+            return;
+        }
 
         // Окно выборки едино для всех ресурсов
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         String to = now.format(DATE_FMT);
         String from = now.minusDays(Math.max(1, windowDays)).format(DATE_FMT);
+        log.info("NewsIngest: cycle start resources={} from={} to={} windowDays={} timeoutMs={}",
+                resources.size(), from, to, windowDays, requestTimeoutMs);
         int totalCreated = 0;
         for (ResourceItem r : resources) {
-            if (r.getUrl() == null || r.getUrl().isBlank()) continue;
-            if (!r.isPollingEnabled()) continue; // используем флаг для управления опросом
+            if (r.getUrl() == null || r.getUrl().isBlank()) {
+                log.info("NewsIngest: skip resource id={} name='{}' reason=empty-url", r.getId(), r.getName());
+                continue;
+            }
+            if (!r.isPollingEnabled()) {
+                log.info("NewsIngest: skip resource id={} name='{}' reason=polling-disabled", r.getId(), r.getName());
+                continue; // используем флаг для управления опросом
+            }
             int created = ingestResourceWithPagination(r, from, to);
             totalCreated += created;
         }
         if (totalCreated > 0) {
             log.info("NewsIngest: total created {} message(s) in this cycle", totalCreated);
+        } else {
+            log.info("NewsIngest: no messages created this cycle");
         }
     }
 
@@ -109,27 +132,40 @@ public class NewsIngestScheduler {
         while (pages < maxPages) {
             String url = buildUrlForResource(r.getUrl(), from, to, cursor);
             try {
+                log.info("NewsIngest: HTTP GET resource id={} name='{}' url='{}' cursor='{}' limit={} timeoutMs={}",
+                        r.getId(), r.getName(), r.getUrl(), cursor, limit, requestTimeoutMs);
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(url))
-                        .timeout(Duration.ofSeconds(15))
+                        .timeout(Duration.ofMillis(Math.max(1_000L, requestTimeoutMs)))
                         .GET()
                         .build();
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 lastStatus = response.statusCode();
                 lastError = null;
+                log.info("NewsIngest: HTTP status={} bodyLen={} resourceId={}", response.statusCode(),
+                        response.body() == null ? 0 : response.body().length(), r.getId());
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     log.warn("News API error for resource id={} url={} status={} body={}",
                             r.getId(), r.getUrl(), response.statusCode(), truncate(response.body(), 500));
                     break;
                 }
                 NewsApiResponse payload = objectMapper.readValue(response.body(), NewsApiResponse.class);
-                if (payload == null || payload.items == null || payload.items.isEmpty()) {
+                int itemsCount = (payload == null || payload.items == null) ? 0 : payload.items.size();
+                log.info("NewsIngest: parsed items={} nextCursor='{}' resourceId={}", itemsCount,
+                        payload == null ? null : payload.nextCursor, r.getId());
+                if (itemsCount == 0) {
                     break;
                 }
                 int created = 0;
                 for (NewsItem item : payload.items) {
                     String textForLlm = buildFullText(item);
+                    log.info("LLM: classify start resourceId={} titleLen={} textLen={}",
+                            r.getId(),
+                            item.title == null ? 0 : item.title.length(),
+                            item.text == null ? 0 : item.text.length());
                     var result = classifier.classify(textForLlm);
+                    log.info("LLM: classify done suitable={} confidence={} resourceId={}",
+                            result.isSuitable(), result.getConfidence(), r.getId());
                     if (!result.isSuitable()) {
                         continue;
                     }
@@ -142,6 +178,12 @@ public class NewsIngestScheduler {
                     msg.setAuthorUsername(authorUsername);
                     msg.setResource(r);
                     msg.setContent(messageContent);
+                    log.info("LLM: summarize start resourceId={} contentLen={}",
+                            r.getId(), textForLlm == null ? 0 : textForLlm.length());
+                    String summary = summarizer.summarize(textForLlm);
+                    log.info("LLM: summarize done summaryLen={} resourceId={}",
+                            summary == null ? 0 : summary.length(), r.getId());
+                    msg.setSummary(summary);
                     msg.setStatus(MessageStatus.NOT_SENT);
                     messageRepository.save(msg);
                     created++;
@@ -149,9 +191,12 @@ public class NewsIngestScheduler {
                 createdTotal += created;
                 if (created > 0) {
                     log.info("NewsIngest: resource id={} created {} message(s) on page {}", r.getId(), created, pages + 1);
+                } else {
+                    log.info("NewsIngest: resource id={} no suitable messages on page {}", r.getId(), pages + 1);
                 }
                 cursor = payload.nextCursor;
                 if (cursor == null || cursor.isBlank()) {
+                    log.info("NewsIngest: no nextCursor, stop pagination resourceId={}", r.getId());
                     break;
                 }
                 pages++;
@@ -167,6 +212,8 @@ public class NewsIngestScheduler {
         r.setLastProcessedAt(Instant.now());
         r.setLastPollStatus(lastStatus);
         r.setLastPollError(lastError);
+        log.info("NewsIngest: resource id={} processed, lastStatus={} lastError={}",
+                r.getId(), lastStatus, lastError);
         return createdTotal;
     }
 
@@ -180,7 +227,7 @@ public class NewsIngestScheduler {
     private static String buildMessageContent(NewsItem item) {
         String title = item.title != null ? item.title : "";
         String url = item.url != null ? item.url : "";
-        // Каждая строка будет отправлена отдельно: заголовок, URL
+        // Заголовок и URL в одном сообщении
         return title + "\n" + url;
     }
 

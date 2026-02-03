@@ -12,9 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Component
 public class MessageDispatchScheduler {
@@ -42,7 +40,7 @@ public class MessageDispatchScheduler {
             return;
         }
         if (!telegramSenderService.isConfigured()) {
-            log.debug("Telegram not configured; dispatcher idle");
+            log.info("Telegram not configured; dispatcher idle");
             return;
         }
         Page<MessageEntity> page = messageRepository.findByStatusOrderByCreatedAtAsc(
@@ -53,31 +51,25 @@ public class MessageDispatchScheduler {
         List<MessageEntity> batch = page.getContent();
 
         for (MessageEntity message : batch) {
-            boolean allSent = sendEachLine(message.getContent());
-            if (allSent) {
+            log.info("Dispatch: preparing message id={} createdAt={} status={}",
+                    message.getId(), message.getCreatedAt(), message.getStatus());
+            String toSend = message.getContent();
+            String summary = message.getSummary();
+            if (summary != null && !summary.isBlank()) {
+                toSend = toSend + "\n\n" + summary;
+            }
+            log.info("Dispatch: sending to Telegram messageId={} length={}", message.getId(),
+                    toSend == null ? 0 : toSend.length());
+            boolean sent = telegramSenderService.sendText(toSend);
+            if (sent) {
                 message.setStatus(MessageStatus.SENT);
+                log.info("Dispatch: sent messageId={} status=SENT", message.getId());
             } else {
                 // оставляем NOT_SENT для повторной попытки
                 log.warn("Сообщение id={} отправлено не полностью, повторим позже", message.getId());
             }
         }
         // Flush via transaction commit
-    }
-
-    private boolean sendEachLine(String content) {
-        if (content == null || content.isBlank()) {
-            return true;
-        }
-        List<String> lines = Arrays.stream(content.split("\\R"))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toList());
-        boolean allOk = true;
-        for (String line : lines) {
-            boolean ok = telegramSenderService.sendText(line);
-            allOk = allOk && ok;
-        }
-        return allOk;
     }
 }
 

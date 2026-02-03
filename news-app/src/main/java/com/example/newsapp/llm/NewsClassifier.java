@@ -20,6 +20,9 @@ public class NewsClassifier {
         boolean heuristicRelevant = isHeuristicallyRelevant(text);
         String prompt = buildPrompt(text);
         try {
+            log.info("LLM: classify call promptLen={} textLen={}",
+                    prompt == null ? 0 : prompt.length(),
+                    text == null ? 0 : text.length());
             String resp = ollamaClient.generate(prompt, true);
             // ожидаем JSON {"suitable":true/false,"confidence":0..1,"reasons":[...]}
             try {
@@ -37,6 +40,7 @@ public class NewsClassifier {
                     result.setConfidence(0.7);
                 }
                 // reasons optional
+                log.info("LLM: classify parsed suitable={} confidence={}", result.isSuitable(), result.getConfidence());
                 return result;
             } catch (Exception parseEx) {
                 // fallback: простая эвристика по тексту
@@ -46,6 +50,7 @@ public class NewsClassifier {
                 boolean finalSuitable = suitable || heuristicRelevant;
                 result.setSuitable(finalSuitable);
                 result.setConfidence(finalSuitable ? 0.8 : 0.5);
+                log.info("LLM: classify fallback suitable={} confidence={}", result.isSuitable(), result.getConfidence());
                 return result;
             }
         } catch (Exception e) {
@@ -54,6 +59,7 @@ public class NewsClassifier {
             boolean finalSuitable = heuristicRelevant;
             result.setSuitable(finalSuitable);
             result.setConfidence(finalSuitable ? 0.8 : 0.0);
+            log.info("LLM: classify error fallback suitable={} confidence={}", result.isSuitable(), result.getConfidence());
             return result;
         }
     }

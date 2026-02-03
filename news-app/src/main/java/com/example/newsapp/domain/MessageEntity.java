@@ -32,6 +32,9 @@ public class MessageEntity {
     @Column(nullable = false, length = 16)
     private MessageStatus status = MessageStatus.NOT_SENT;
 
+    @Column(length = 2048)
+    private String summary;
+
     public Long getId() {
         return id;
     }
@@ -78,6 +81,14 @@ public class MessageEntity {
 
     public void setStatus(MessageStatus status) {
         this.status = status;
+    }
+
+    public String getSummary() {
+        return summary;
+    }
+
+    public void setSummary(String summary) {
+        this.summary = summary;
     }
 }
 

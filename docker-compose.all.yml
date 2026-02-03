@@ -1,0 +1,138 @@
+services:
+  db:
+    image: postgres:16
+    container_name: newsapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: newsdb
+      POSTGRES_USER: news
+      POSTGRES_PASSWORD: news
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: newsapp-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_MODEL=llama3.2:3b
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q \"${OLLAMA_MODEL:-llama3.2:3b}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: newsapp-ollama-pull
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_MODEL=llama3.2:3b
+    volumes:
+      - ollama-data:/root/.ollama
+    entrypoint: ["/bin/sh","-lc","sleep 2 && ollama pull ${OLLAMA_MODEL:-llama3.2:3b} && echo 'Model pulled' && sleep 1"]
+    restart: "no"
+
+  fedresurs-crawler:
+    build:
+      context: .
+      dockerfile: fedresurs-crawler/Dockerfile
+    container_name: fedresurs-crawler
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8081"
+    ports:
+      - "8081:8081"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+
+  gosuslugi-rss:
+    build:
+      context: .
+      dockerfile: gosuslugi-rss/Dockerfile
+    container_name: gosuslugi-rss
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8082"
+    ports:
+      - "8082:8082"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+
+  tg-channel-parser:
+    build:
+      context: .
+      dockerfile: tg-channel-parser/Dockerfile
+    container_name: tg-channel-parser
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8083"
+    ports:
+      - "8083:8083"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+
+  news-app:
+    build:
+      context: .
+      dockerfile: news-app/Dockerfile
+    container_name: news-app
+    restart: unless-stopped
+    environment:
+      # DB
+      DB_URL: jdbc:postgresql://db:5432/newsdb
+      DB_USER: news
+      DB_PASSWORD: news
+      # LLM
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2:3b
+      # Ingest
+      NEWS_REQUEST_TIMEOUT_MS: "300000"
+      # Vaadin in production mode (no dev server)
+      VAADIN_PRODUCTIONMODE: "true"
+      # Force using docker-specific data script to set internal hosts
+      SPRING_SQL_INIT_MODE: always
+      SPRING_SQL_INIT_DATA_LOCATIONS: classpath:/data-docker.sql
+      SPRING_JPA_DEFER_DATASOURCE_INITIALIZATION: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      fedresurs-crawler:
+        condition: service_started
+      gosuslugi-rss:
+        condition: service_started
+      tg-channel-parser:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
+  ollama-data:
+

@@ -27,14 +27,24 @@ services:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_MODEL=llama3.2:3b
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q \"${OLLAMA_MODEL:-llama3.2:3b}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 60
     # Примечание: модель скачается при первом вызове API или через сервис ниже
 
   ollama-pull:
     image: ollama/ollama:latest
     container_name: newsapp-ollama-pull
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_MODEL=llama3.2:3b
     depends_on:
       - ollama
-    entrypoint: ["/bin/sh","-lc","sleep 2 && ollama pull llama3.2:3b && echo 'Model pulled' && sleep 1"]
+    entrypoint: ["/bin/sh","-lc","sleep 2 && ollama pull ${OLLAMA_MODEL:-llama3.2:3b} && echo 'Model pulled' && sleep 1"]
     restart: "no"
 volumes:
   db-data:

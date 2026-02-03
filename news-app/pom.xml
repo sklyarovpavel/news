@@ -14,7 +14,7 @@
     <groupId>com.example</groupId>
     <artifactId>news-app</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>news-app</name>
+    <name>News crawler main application with ui</name>
     <description>News App with Spring Boot + Vaadin</description>
     <packaging>jar</packaging>
 
@@ -58,8 +58,28 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>com.vaadin</groupId>
+                <artifactId>vaadin-maven-plugin</artifactId>
+                <version>${vaadin.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-frontend</goal>
+                            <goal>build-frontend</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
                 <configuration>
                     <excludes>
                         <exclude>

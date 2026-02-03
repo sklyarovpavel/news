@@ -35,7 +35,14 @@ public class TelegramSenderService {
             log.warn("Telegram credentials are not configured; skip sending");
             return false;
         }
+        if (text == null || text.isBlank()) {
+            log.info("Telegram: skip sending empty text");
+            return true;
+        }
         try {
+            log.info("Telegram: sending message length={} preview='{}'",
+                    text.length(),
+                    text.length() > 80 ? text.substring(0, 80) + "…" : text);
             String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
             String body = "chat_id=" + URLEncoder.encode(chatId, StandardCharsets.UTF_8)
                     + "&text=" + URLEncoder.encode(text, StandardCharsets.UTF_8);
@@ -48,6 +55,8 @@ public class TelegramSenderService {
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                log.info("Telegram: sent ok status={} bodyLen={}", response.statusCode(),
+                        response.body() == null ? 0 : response.body().length());
                 return true;
             } else {
                 log.warn("Telegram send failed. Status: {}, body: {}", response.statusCode(), response.body());
