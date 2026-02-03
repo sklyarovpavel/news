@@ -102,6 +102,8 @@ services:
       dockerfile: news-app/Dockerfile
     container_name: news-app
     restart: unless-stopped
+    env_file:
+      - ./.env
     environment:
       # DB
       DB_URL: jdbc:postgresql://db:5432/newsdb
