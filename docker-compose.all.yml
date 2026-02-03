@@ -38,12 +38,14 @@ services:
     image: ollama/ollama:latest
     container_name: newsapp-ollama-pull
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
     environment:
       - OLLAMA_MODEL=llama3.2:3b
+      - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ollama-data:/root/.ollama
-    entrypoint: ["/bin/sh","-lc","sleep 2 && ollama pull ${OLLAMA_MODEL:-llama3.2:3b} && echo 'Model pulled' && sleep 1"]
+    entrypoint: ["/bin/sh","-lc","echo 'Waiting for Ollama API...' ; for i in $(seq 1 120); do if ollama list >/dev/null 2>&1; then break; fi; sleep 1; done; ollama pull ${OLLAMA_MODEL:-llama3.2:3b} && echo 'Model pulled' && sleep 1"]
     restart: "no"
 
   fedresurs-crawler:

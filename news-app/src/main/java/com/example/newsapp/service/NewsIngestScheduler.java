@@ -83,12 +83,11 @@ public class NewsIngestScheduler {
             return;
         }
 
-        // Окно выборки едино для всех ресурсов
+        // Для каждого ресурса используем собственное окно: от lastProcessedAt до текущего момента
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         String to = now.format(DATE_FMT);
-        String from = now.minusDays(Math.max(1, windowDays)).format(DATE_FMT);
-        log.info("NewsIngest: cycle start resources={} from={} to={} windowDays={} timeoutMs={}",
-                resources.size(), from, to, windowDays, requestTimeoutMs);
+        log.info("NewsIngest: cycle start resources={} to={} timeoutMs={}",
+                resources.size(), to, requestTimeoutMs);
         int totalCreated = 0;
         for (ResourceItem r : resources) {
             if (r.getUrl() == null || r.getUrl().isBlank()) {
@@ -98,6 +97,14 @@ public class NewsIngestScheduler {
             if (!r.isPollingEnabled()) {
                 log.info("NewsIngest: skip resource id={} name='{}' reason=polling-disabled", r.getId(), r.getName());
                 continue; // используем флаг для управления опросом
+            }
+            // from: дата на основе lastProcessedAt ресурса (UTC, формат yyyy-MM-dd)
+            Instant lpa = r.getLastProcessedAt();
+            OffsetDateTime lpaUtc = (lpa == null ? now.minusDays(Math.max(1, windowDays)) : lpa.atOffset(ZoneOffset.UTC));
+            String from = lpaUtc.format(DATE_FMT);
+            // гарантируем корректный диапазон
+            if (lpaUtc.isAfter(now)) {
+                from = to;
             }
             int created = ingestResourceWithPagination(r, from, to);
             totalCreated += created;
@@ -129,6 +136,7 @@ public class NewsIngestScheduler {
         final int maxPages = 5; // предохранитель
         Integer lastStatus = null;
         String lastError = null;
+        boolean encounteredError = false;
         while (pages < maxPages) {
             String url = buildUrlForResource(r.getUrl(), from, to, cursor);
             try {
@@ -147,6 +155,8 @@ public class NewsIngestScheduler {
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     log.warn("News API error for resource id={} url={} status={} body={}",
                             r.getId(), r.getUrl(), response.statusCode(), truncate(response.body(), 500));
+                    lastError = "HTTP " + response.statusCode();
+                    encounteredError = true;
                     break;
                 }
                 NewsApiResponse payload = objectMapper.readValue(response.body(), NewsApiResponse.class);
@@ -205,11 +215,14 @@ public class NewsIngestScheduler {
                 Thread.currentThread().interrupt();
                 lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
                 lastStatus = null;
+                encounteredError = true;
                 break;
             }
         }
         // Обновим метрики ресурса
-        r.setLastProcessedAt(Instant.now());
+        if (!encounteredError) {
+            r.setLastProcessedAt(Instant.now());
+        }
         r.setLastPollStatus(lastStatus);
         r.setLastPollError(lastError);
         log.info("NewsIngest: resource id={} processed, lastStatus={} lastError={}",
