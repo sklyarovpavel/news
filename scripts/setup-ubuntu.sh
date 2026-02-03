@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+
+# Re-exec under bash if invoked via sh/dash (to support pipefail and bashisms)
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec /usr/bin/env bash "$0" "$@"
+fi
+
 set -Eeuo pipefail
 
 # Usage:
@@ -15,9 +21,9 @@ if [[ "${DEBUG:-}" == "1" ]]; then
   set -x
 fi
 
-function info() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
-function warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
-function err()  { echo -e "\033[1;31m[ERROR]\033[0m $*"; }
+info() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
+warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
+err()  { echo -e "\033[1;31m[ERROR]\033[0m $*"; }
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_DIR}"
