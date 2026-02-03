@@ -21,9 +21,9 @@
 Аналогично:
 
 ```bash
-curl -G "http://localhost:8080/api/v1/news" \
-  --data-urlencode "from=2026-01-01" \
-  --data-urlencode "to=2026-01-31" \
+curl -G "http://localhost:8081/api/v1/news" \
+  --data-urlencode "from=2026-01-28" \
+  --data-urlencode "to=2026-02-03" \
   --data-urlencode "limit=200"
 ```
 

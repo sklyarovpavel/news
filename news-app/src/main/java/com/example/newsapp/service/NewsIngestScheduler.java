@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.net.URI;
@@ -43,6 +42,7 @@ public class NewsIngestScheduler {
     private final MessageRepository messageRepository;
     private final ResourceItemRepository resourceItemRepository;
     private final NewsSummarizer summarizer;
+    private final IngestPersistenceService ingestTx;
 
     @Value("${app.news.enabled:true}")
     private boolean enabled;
@@ -59,11 +59,13 @@ public class NewsIngestScheduler {
     public NewsIngestScheduler(NewsClassifier classifier,
                                MessageRepository messageRepository,
                                ResourceItemRepository resourceItemRepository,
-                               NewsSummarizer summarizer) {
+                               NewsSummarizer summarizer,
+                               IngestPersistenceService ingestTx) {
         this.classifier = classifier;
         this.messageRepository = messageRepository;
         this.resourceItemRepository = resourceItemRepository;
         this.summarizer = summarizer;
+        this.ingestTx = ingestTx;
         long ctMs = Math.max(1_000L, requestTimeoutMs);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(ctMs))
@@ -71,7 +73,6 @@ public class NewsIngestScheduler {
     }
 
     @Scheduled(fixedDelayString = "${app.news.fixedDelayMs:60000}")
-    @Transactional
     public void fetchAndIngest() {
         if (!enabled) {
             log.info("NewsIngest: disabled, skip cycle");
@@ -195,7 +196,8 @@ public class NewsIngestScheduler {
                             summary == null ? 0 : summary.length(), r.getId());
                     msg.setSummary(summary);
                     msg.setStatus(MessageStatus.NOT_SENT);
-                    messageRepository.save(msg);
+                    // Сохраняем сообщение отдельной транзакцией
+                    ingestTx.saveMessage(msg);
                     created++;
                 }
                 createdTotal += created;
@@ -219,14 +221,9 @@ public class NewsIngestScheduler {
                 break;
             }
         }
-        // Обновим метрики ресурса
-        if (!encounteredError) {
-            r.setLastProcessedAt(Instant.now());
-        }
-        r.setLastPollStatus(lastStatus);
-        r.setLastPollError(lastError);
-        log.info("NewsIngest: resource id={} processed, lastStatus={} lastError={}",
-                r.getId(), lastStatus, lastError);
+        // Обновим метрики ресурса отдельной транзакцией
+        ingestTx.updateResourceStatus(r.getId(), !encounteredError, lastStatus, lastError);
+        log.info("NewsIngest: resource id={} processed, lastStatus={} lastError={}", r.getId(), lastStatus, lastError);
         return createdTotal;
     }
 
