@@ -1,0 +1,38 @@
+server:
+  port: 8081
+
+spring:
+  main:
+    banner-mode: "off"
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+crawler:
+  rate-limit-rps: 2
+  request-timeout-ms: 5000
+  retry:
+    max-attempts: 3
+    backoff-ms: 500
+  cache:
+    enabled: false
+    ttl-ms: 10000
+  source:
+    base-url: "https://fedresurs.ru/news"
+    user-agent: "FedresursCrawler/1.0 (+https://example.com)"
+    accept-language: "ru-RU,ru;q=0.9"
+  max-range-days: 31
+  default-limit: 500
+  max-limit: 1000
+
+logging:
+  level:
+    root: INFO
+    ru.fedresurs.crawler: INFO
+

@@ -1,0 +1,31 @@
+/fedresurs-crawler/target/
+/.idea/
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+
+# IDE
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+
+# Vaadin / Frontend
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+webpack.generated.js
+vite.generated.ts
+.vaadin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+/target/

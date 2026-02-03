@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+spring:
+  main:
+    web-application-type: reactive
+
+crawler:
+  rate-limit-rps: 2
+  request-timeout-ms: 5000
+  retry:
+    max-attempts: 2
+    backoff-ms: 300
+  cache:
+    enabled: true
+    ttl-ms: 10000
+  source:
+    rss-url: "https://info.gosuslugi.ru/rss/"
+    user-agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.8"
+    accept-language: "ru-RU,ru;q=0.9"
+    default-zone-id: "Europe/Moscow"
+  max-range-days: 31
+  default-limit: 500
+  max-limit: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+

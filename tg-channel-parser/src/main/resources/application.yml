@@ -1,0 +1,41 @@
+crawler:
+  rate-limit-rps: 2
+  request-timeout-ms: 30000
+  retry:
+    max-attempts: 2
+    backoff-ms: 300
+  cache:
+    enabled: true
+    ttl-ms: 10000
+  source:
+    base-url: https://t.me/s/smev_news
+    user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36
+    accept-language: ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7
+    accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+  max-range-days: 31
+  default-limit: 500
+  max-limit: 1000
+
+server:
+  port: 8082
+
+spring:
+  main:
+    web-application-type: reactive
+  application:
+    name: tg-channel-parser
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    root: INFO
+    ru.smev.tg: INFO
+

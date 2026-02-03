@@ -1,0 +1,42 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: newsapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: newsdb
+      POSTGRES_USER: news
+      POSTGRES_PASSWORD: news
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ollama:
+    image: ollama/ollama:latest
+    container_name: newsapp-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    # Примечание: модель скачается при первом вызове API или через сервис ниже
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: newsapp-ollama-pull
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh","-lc","sleep 2 && ollama pull llama3.2:3b && echo 'Model pulled' && sleep 1"]
+    restart: "no"
+volumes:
+  db-data:
+  ollama-data:
+
