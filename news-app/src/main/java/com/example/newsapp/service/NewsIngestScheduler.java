@@ -189,11 +189,19 @@ public class NewsIngestScheduler {
                     msg.setAuthorUsername(authorUsername);
                     msg.setResource(r);
                     msg.setContent(messageContent);
-                    log.info("LLM: summarize start resourceId={} contentLen={}",
-                            r.getId(), textForLlm == null ? 0 : textForLlm.length());
-                    String summary = summarizer.summarize(textForLlm);
-                    log.info("LLM: summarize done summaryLen={} resourceId={}",
-                            summary == null ? 0 : summary.length(), r.getId());
+                    String summary;
+                    int newsTextLen = item.text == null ? 0 : item.text.length();
+                    if (newsTextLen > 0 && newsTextLen < 500) {
+                        // Короткие новости (<500 символов): не суммаризируем, отправляем исходный текст
+                        summary = item.text.trim();
+                        log.info("LLM: skip summarize (short text) resourceId={} textLen={}", r.getId(), newsTextLen);
+                    } else {
+                        log.info("LLM: summarize start resourceId={} contentLen={}",
+                                r.getId(), textForLlm == null ? 0 : textForLlm.length());
+                        summary = summarizer.summarize(textForLlm);
+                        log.info("LLM: summarize done summaryLen={} resourceId={}",
+                                summary == null ? 0 : summary.length(), r.getId());
+                    }
                     msg.setSummary(summary);
                     msg.setStatus(MessageStatus.NOT_SENT);
                     // Сохраняем сообщение отдельной транзакцией
