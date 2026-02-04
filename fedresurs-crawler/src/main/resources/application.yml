@@ -16,7 +16,7 @@ management:
 
 crawler:
   rate-limit-rps: 2
-  request-timeout-ms: 5000
+  request-timeout-ms: 20000
   retry:
     max-attempts: 3
     backoff-ms: 500

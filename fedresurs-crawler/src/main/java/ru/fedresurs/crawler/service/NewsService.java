@@ -3,6 +3,7 @@ package ru.fedresurs.crawler.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import reactor.util.retry.Retry;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.fedresurs.crawler.api.dto.NewsItem;
@@ -15,11 +16,10 @@ import ru.fedresurs.crawler.util.RateLimiter;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
+import java.time.Duration;
 
 @Service
 public class NewsService {
@@ -70,9 +70,15 @@ public class NewsService {
                         .build())
                 .take(effectiveLimit)
                 .flatMap(item ->
-                        rateLimiter.limit(client.fetchContent(item.getUrl())
-                                        .timeout(java.time.Duration.ofMillis(Math.max(props.getRequestTimeoutMs(), 8000)))
-                                        .onErrorReturn("")
+                        rateLimiter.limit(
+                                        client.fetchContent(item.getUrl())
+                                                // Мягкие ретраи на сетевые/временные сбои
+                                                .retryWhen(Retry.backoff(2, Duration.ofMillis(600))
+                                                        .maxBackoff(Duration.ofSeconds(6))
+                                                        .jitter(0.4))
+                                                // Чуть увеличим базовый таймаут на контент
+                                                .timeout(Duration.ofMillis(Math.max(props.getRequestTimeoutMs(), 12_000)))
+                                                .onErrorReturn("")
                                 )
                                 .map(content -> {
                                     item.setText(content);
@@ -96,16 +102,28 @@ public class NewsService {
     }
 
     private Flux<FedresursClient.Page> fetchPages(LocalDate from, LocalDate to, int limit, String initialCursor) {
-        Mono<FedresursClient.Page> first = rateLimiter.limit(client.fetchPage(initialCursor, from, to, limit));
+        Mono<FedresursClient.Page> first = rateLimiter.limit(
+                client.fetchPage(initialCursor, from, to, limit)
+                        // Ретраим получение страниц, чтобы сгладить временные ошибки рендера
+                        .retryWhen(Retry.backoff(2, Duration.ofMillis(500))
+                                .maxBackoff(Duration.ofSeconds(5))
+                                .jitter(0.4))
+        );
         return first.expand(page -> {
             if (page.nextCursor() == null) {
                 return Mono.empty();
             }
-            return rateLimiter.limit(client.fetchPage(page.nextCursor(), from, to, limit));
+            return rateLimiter.limit(
+                    client.fetchPage(page.nextCursor(), from, to, limit)
+                            .retryWhen(Retry.backoff(2, Duration.ofMillis(500))
+                                    .maxBackoff(Duration.ofSeconds(5))
+                                    .jitter(0.4))
+            );
         }).filter(p -> p.items() != null && !p.items().isEmpty());
     }
 
-    private record SimpleItem(String id, String url, String text, String publishedAt) {}
+    // reserved for future use
+    // private record SimpleItem(String id, String url, String text, String publishedAt) {}
 
     private boolean withinRange(String publishedAtIso, LocalDate from, LocalDate to) {
         try {

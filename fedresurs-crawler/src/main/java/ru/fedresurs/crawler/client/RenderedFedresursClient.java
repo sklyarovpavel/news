@@ -186,34 +186,154 @@ public class RenderedFedresursClient implements FedresursClient {
                     // Фоллбек: пробуем прямую навигацию
                     page.navigate(url, new com.microsoft.playwright.Page.NavigateOptions().setTimeout(timeoutMs));
                 }
-                // Ждём появления контента: article/main/параграфы
-                page.waitForTimeout(800);
-                Locator article = page.locator("article");
-                if (article.count() > 0) {
-                    content = article.first().innerText();
+                // Дождёмся перехода на страницу новости и загрузки тела статьи
+                try {
+                    page.waitForURL("**/news/**", new com.microsoft.playwright.Page.WaitForURLOptions().setTimeout(timeoutMs));
+                } catch (Exception ignored) {
                 }
-                if (content == null || content.isBlank()) {
-                    Locator main = page.locator("main");
-                    if (main.count() > 0) content = main.first().innerText();
+                // Попробуем закрыть баннер cookies, если он мешает
+                tryClickAny(page,
+                        new String[]{"button:has-text(\"Принять\")", "button:has-text(\"Соглас\")", "button:has-text(\"Понятно\")",
+                                "button:has-text(\"Хорошо\")", "button:has-text(\"OK\")", "button:has-text(\"ОК\")"});
+                // Дадим SPA чуть больше времени
+                try {
+                    page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE,
+                            new com.microsoft.playwright.Page.WaitForLoadStateOptions().setTimeout((double) Math.max(timeoutMs, 5000)));
+                } catch (Exception ignored) {
                 }
-                if (content == null || content.isBlank()) {
-                    Locator paragraphs = page.locator("p");
-                    int pc = Math.min(paragraphs.count(), 40);
-                    StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < pc; i++) {
-                        String t = paragraphs.nth(i).innerText().trim();
-                        if (!t.isBlank()) {
-                            if (sb.length() > 0) sb.append("\n\n");
-                            sb.append(t);
+                // Пытаемся извлечь текст из вероятных контейнеров статьи
+                String[] candidates = new String[] {
+                        "article",
+                        "main article",
+                        "[itemprop='articleBody']",
+                        "section.news-detail, .news-detail",
+                        ".news__detail, .news__content",
+                        "article .content, .article .content"
+                };
+                for (String sel : candidates) {
+                    try {
+                        Locator c = page.locator(sel);
+                        if (c.count() > 0) {
+                            String t = c.first().innerText().trim();
+                            if (t != null && t.length() > 400) { // эвристика: реальная статья длиннее служебных текстов
+                                content = t;
+                                break;
+                            }
                         }
+                    } catch (Exception ignored) {
                     }
-                    content = sb.toString();
                 }
+                // Фоллбек: составим текст из параграфов внутри article или main
+                if (content == null || content.isBlank()) {
+                    content = extractFromParagraphs(page);
+                }
+                // Ещё один фоллбек: взять самый большой связный текстовый блок на странице
+                if (content == null || content.length() < 600) {
+                    try {
+                        Object largestObj = page.evaluate("() => {\n" +
+                                "  const bad = /cookie|Найдено записей/iu;\n" +
+                                "  const blacklist = new Set(['SCRIPT','STYLE','NAV','ASIDE','HEADER','FOOTER']);\n" +
+                                "  let best = '';\n" +
+                                "  let bestLen = 0;\n" +
+                                "  const candidates = Array.from(document.querySelectorAll('article,main,section,div'));\n" +
+                                "  for (const el of candidates) {\n" +
+                                "    if (blacklist.has(el.tagName)) continue;\n" +
+                                "    const txt = (el.innerText || '').trim();\n" +
+                                "    const len = txt.length;\n" +
+                                "    if (len > bestLen && !bad.test(txt)) { best = txt; bestLen = len; }\n" +
+                                "  }\n" +
+                                "  return best;\n" +
+                                "}");
+                        String largest = largestObj == null ? null : largestObj.toString();
+                        if (largest != null && largest.trim().length() > content.length()) {
+                            content = largest.trim();
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+                // Очистим известные служебные/баннерные хвосты
+                content = cleanupContent(content);
                 context.close();
                 browser.close();
                 return content == null ? "" : content;
             }
         });
+    }
+
+    private static void tryClickAny(com.microsoft.playwright.Page page, String[] selectors) {
+        for (String s : selectors) {
+            try {
+                Locator btn = page.locator(s);
+                if (btn != null && btn.count() > 0) {
+                    btn.first().click(new Locator.ClickOptions().setTimeout(800));
+                    return;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        // Попробуем по тексту без ограничений на тег
+        String[] texts = new String[]{"Принять", "Соглас", "Понятно", "Хорошо", "OK", "ОК", "Agree", "Accept"};
+        for (String t : texts) {
+            try {
+                Locator el = page.getByText(t);
+                if (el != null && el.count() > 0) {
+                    el.first().click(new Locator.ClickOptions().setTimeout(800));
+                    return;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static String extractFromParagraphs(com.microsoft.playwright.Page page) {
+        // Сначала внутри article/main, затем общий фоллбек
+        StringBuilder sb = new StringBuilder();
+        try {
+            Locator container = page.locator("article");
+            if (container.count() == 0) {
+                container = page.locator("main");
+            }
+            Locator paragraphs = container.count() > 0
+                    ? container.first().locator("p")
+                    : page.locator("article p, main p");
+            int pc = Math.min(paragraphs.count(), 120);
+            for (int i = 0; i < pc; i++) {
+                String t = safeInnerText(paragraphs.nth(i));
+                if (!t.isBlank()) {
+                    if (sb.length() > 0) sb.append("\n\n");
+                    sb.append(t);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return sb.toString().trim();
+    }
+
+    private static String safeInnerText(Locator locator) {
+        try {
+            return locator.innerText().trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static String cleanupContent(String raw) {
+        if (raw == null) return null;
+        String[] lines = raw.replace('\u00A0', ' ').split("\\R");
+        StringBuilder out = new StringBuilder();
+        for (String line : lines) {
+            String l = line.trim();
+            if (l.isEmpty()) continue;
+            String low = l.toLowerCase();
+            // Отсечём явные служебные куски
+            if (low.contains("мы используем cookie") || low.contains("cookie")
+                    || l.startsWith("Найдено записей")) {
+                continue;
+            }
+            if (out.length() > 0) out.append("\n");
+            out.append(l);
+        }
+        return out.toString().trim();
     }
 }
 

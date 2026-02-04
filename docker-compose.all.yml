@@ -58,7 +58,7 @@ services:
       SERVER_PORT: "8081"
       # Boost crawler throughput and timeouts for larger limits
       CRAWLER_RATE_LIMIT_RPS: "8"
-      CRAWLER_REQUEST_TIMEOUT_MS: "15000"
+      CRAWLER_REQUEST_TIMEOUT_MS: "25000"
     ports:
       - "8081:8081"
     depends_on:
