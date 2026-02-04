@@ -50,8 +50,28 @@ public class FedresursNewsParser {
             String id = extractIdFromUrl(href);
 
             String iso = null;
+            // 1) Приоритетно ищем дату внутри блока метаданных новости
+            Element metaEl = el.selectFirst(".news-item-metadata");
+            if (metaEl != null) {
+                Element timeInMeta = metaEl.selectFirst("time[datetime]");
+                if (timeInMeta != null) {
+                    String dt = timeInMeta.attr("datetime").trim();
+                    try {
+                        OffsetDateTime odt = OffsetDateTime.parse(dt);
+                        iso = odt.toString();
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (iso == null) {
+                    String rawMeta = metaEl.text().trim();
+                    String maybe = tryParseDateGuess(rawMeta);
+                    if (maybe != null) {
+                        iso = maybe;
+                    }
+                }
+            }
             Element timeEl = el.selectFirst("time[datetime]");
-            if (timeEl != null) {
+            if (iso == null && timeEl != null) {
                 String dt = timeEl.attr("datetime").trim();
                 try {
                     OffsetDateTime odt = OffsetDateTime.parse(dt);

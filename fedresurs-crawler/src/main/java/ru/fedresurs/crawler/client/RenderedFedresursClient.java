@@ -103,6 +103,21 @@ public class RenderedFedresursClient implements FedresursClient {
     }
 
     private static String extractDateNear(Locator link) {
+        // Пытаемся найти time[datetime] в блоке метаданных, если он присутствует
+        try {
+            Locator metaTime = link.locator("xpath=ancestor::*[1]//*[contains(@class,'news-item-metadata')]//time[@datetime]").first();
+            if (metaTime != null && metaTime.count() > 0) {
+                String dt = metaTime.first().getAttribute("datetime");
+                if (dt != null && !dt.isBlank()) return dt;
+            }
+            Locator meta = link.locator("xpath=ancestor::*[1]//*[contains(@class,'news-item-metadata')]").first();
+            if (meta != null && meta.count() > 0) {
+                String raw = meta.first().innerText().trim();
+                String iso = tryParseSimpleDate(raw);
+                if (iso != null) return iso;
+            }
+        } catch (Exception ignored) {
+        }
         // Пытаемся найти time[datetime] в ближайших родителях
         Locator candidate = link.locator("xpath=ancestor-or-self::*[1]//*[name()='time' and @datetime]").first();
         if (candidate != null && candidate.count() > 0) {
