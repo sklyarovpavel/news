@@ -7,10 +7,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class NewsSummarizer {
     private static final Logger log = LoggerFactory.getLogger(NewsSummarizer.class);
-    private final OllamaClient ollamaClient;
+    private final GigaChatClient gigaChatClient;
 
-    public NewsSummarizer(OllamaClient ollamaClient) {
-        this.ollamaClient = ollamaClient;
+    public NewsSummarizer(GigaChatClient gigaChatClient) {
+        this.gigaChatClient = gigaChatClient;
     }
 
     public String summarize(String titleAndText) {
@@ -23,7 +23,7 @@ public class NewsSummarizer {
             log.info("LLM: summarize call promptLen={} textLen={}",
                     prompt == null ? 0 : prompt.length(),
                     titleAndText == null ? 0 : titleAndText.length());
-            String resp = ollamaClient.generate(prompt, false);
+            String resp = gigaChatClient.generate(prompt, false);
             if (resp != null) {
                 log.info("LLM: summarize responseLen={}", resp.length());
                 return resp.trim();

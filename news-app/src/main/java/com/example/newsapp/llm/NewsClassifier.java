@@ -9,11 +9,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class NewsClassifier {
     private static final Logger log = LoggerFactory.getLogger(NewsClassifier.class);
-    private final OllamaClient ollamaClient;
+    private final GigaChatClient gigaChatClient;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public NewsClassifier(OllamaClient ollamaClient) {
-        this.ollamaClient = ollamaClient;
+    public NewsClassifier(GigaChatClient gigaChatClient) {
+        this.gigaChatClient = gigaChatClient;
     }
 
     public ClassificationResult classify(String text) {
@@ -23,7 +23,7 @@ public class NewsClassifier {
             log.info("LLM: classify call promptLen={} textLen={}",
                     prompt == null ? 0 : prompt.length(),
                     text == null ? 0 : text.length());
-            String resp = ollamaClient.generate(prompt, true);
+            String resp = gigaChatClient.generate(prompt, true);
             // ожидаем JSON {"suitable":true/false,"confidence":0..1,"reasons":[...]}
             try {
                 JsonNode node = mapper.readTree(resp);

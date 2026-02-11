@@ -17,37 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: newsapp-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_KEEP_ALIVE=24h
-      - OLLAMA_MODEL=llama3.2:3b
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q \"$${OLLAMA_MODEL:-llama3.2:3b}\""]
-      interval: 10s
-      timeout: 5s
-      retries: 60
-
-  ollama-pull:
-    image: ollama/ollama:latest
-    container_name: newsapp-ollama-pull
-    depends_on:
-      ollama:
-        condition: service_started
-    environment:
-      - OLLAMA_MODEL=llama3.2:3b
-      - OLLAMA_HOST=http://ollama:11434
-    volumes:
-      - ollama-data:/root/.ollama
-    entrypoint: ["/bin/sh","-lc","echo 'Waiting for Ollama API...' ; for i in $(seq 1 120); do if ollama list >/dev/null 2>&1; then break; fi; sleep 1; done; ollama pull $${OLLAMA_MODEL:-llama3.2:3b} && echo 'Model pulled' && sleep 1"]
-    restart: "no"
-
   fedresurs-crawler:
     build:
       context: .
@@ -61,11 +30,7 @@ services:
       CRAWLER_REQUEST_TIMEOUT_MS: "25000"
     ports:
       - "8081:8081"
-    depends_on:
-      ollama:
-        condition: service_healthy
-      ollama-pull:
-        condition: service_completed_successfully
+    depends_on: {}
 
   gosuslugi-rss:
     build:
@@ -77,11 +42,7 @@ services:
       SERVER_PORT: "8082"
     ports:
       - "8082:8082"
-    depends_on:
-      ollama:
-        condition: service_healthy
-      ollama-pull:
-        condition: service_completed_successfully
+    depends_on: {}
 
   tg-channel-parser:
     build:
@@ -93,11 +54,7 @@ services:
       SERVER_PORT: "8083"
     ports:
       - "8083:8083"
-    depends_on:
-      ollama:
-        condition: service_healthy
-      ollama-pull:
-        condition: service_completed_successfully
+    depends_on: {}
 
   news-app:
     build:
@@ -112,9 +69,10 @@ services:
       DB_URL: jdbc:postgresql://db:5432/newsdb
       DB_USER: news
       DB_PASSWORD: news
-      # LLM
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: llama3.2:3b
+      # LLM (GigaChat)
+      GIGACHAT_API_KEY: ${GIGACHAT_API_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-gigachat_api_pers}
+      GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.2}
       # Auth (provide real credentials via environment or .env file)
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
@@ -139,12 +97,6 @@ services:
         condition: service_started
       tg-channel-parser:
         condition: service_started
-      ollama:
-        condition: service_healthy
-      ollama-pull:
-        condition: service_completed_successfully
-
 volumes:
   db-data:
-  ollama-data:
 

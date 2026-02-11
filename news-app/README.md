@@ -21,12 +21,6 @@
 docker compose up -d db
 ```
 
-1.1) Поднять локальную LLM (Ollama) и скачать модель:
-```bash
-docker compose up -d ollama ollama-pull
-# либо дождаться авто-скачивания при первом запросе к API
-```
-
 2) Запустить приложение локально (НЕ через docker-compose):
 ```bash
 mvn spring-boot:run
@@ -45,11 +39,12 @@ mvn spring-boot:run
 - `DB_USER`
 - `DB_PASSWORD`
 
-## LLM (классификация новостей)
-- В `docker-compose.yml` добавлен сервис `ollama` (порт 11434). По умолчанию используется модель `llama3.2:3b`.
-- Конфигурация:
-  - `llm.ollama.baseUrl` (или `OLLAMA_BASE_URL`), по умолчанию `http://localhost:11434`
-  - `llm.ollama.model` (или `OLLAMA_MODEL`), по умолчанию `llama3.2:3b`
+## LLM (GigaChat, классификация/сводка новостей)
+- Используется Spring AI GigaChat. Нужен API-ключ.
+- Переменные окружения:
+  - `GIGACHAT_API_KEY` — ключ доступа (обязательно)
+  - `GIGACHAT_SCOPE` — по умолчанию `gigachat_api_pers`
+  - `GIGACHAT_TEMPERATURE` — по умолчанию `0.2`
 
 ### Тест REST API
 POST `http://localhost:8080/api/llm/classify`

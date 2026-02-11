@@ -10,7 +10,7 @@ set -Eeuo pipefail
 # Usage:
 #   ./scripts/setup-ubuntu.sh [--up] [--up-all]
 # Flags:
-#   --up       Bring up minimal stack (db + ollama + pull + app from news-app/docker-compose.yml)
+#   --up       Bring up minimal stack (db + app from news-app/docker-compose.yml)
 #   --up-all   Bring up full stack from docker-compose.all.yml
 #
 # Notes:
@@ -127,7 +127,7 @@ elif [[ ${UP_MINIMAL} -eq 1 ]]; then
   docker compose -f "${REPO_DIR}/news-app/docker-compose.yml" up -d --build
 else
   info "Installation complete. To start services, run one of:"
-  echo "  ./scripts/setup-ubuntu.sh --up       # minimal stack (db + ollama + pull + app)"
+  echo "  ./scripts/setup-ubuntu.sh --up       # minimal stack (db + app)"
   echo "  ./scripts/setup-ubuntu.sh --up-all   # full stack (all services)"
 fi
 

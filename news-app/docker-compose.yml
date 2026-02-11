@@ -17,38 +17,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-  ollama:
-    image: ollama/ollama:latest
-    container_name: newsapp-ollama
-    restart: unless-stopped
-    env_file:
-      - ../.env
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q \"$${OLLAMA_MODEL:-llama3.2:3b}\""]
-      interval: 10s
-      timeout: 5s
-      retries: 60
-    # Примечание: модель скачается при первом вызове API или через сервис ниже
-
-  ollama-pull:
-    image: ollama/ollama:latest
-    container_name: newsapp-ollama-pull
-    env_file:
-      - ../.env
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-    depends_on:
-      ollama:
-        condition: service_started
-    entrypoint: ["/bin/sh","-lc","echo 'Waiting for Ollama API...' ; for i in $(seq 1 120); do if ollama list >/dev/null 2>&1; then break; fi; sleep 1; done; ollama pull $${OLLAMA_MODEL:-llama3.2:3b} && echo 'Model pulled' && sleep 1"]
-    restart: "no"
 volumes:
   db-data:
-  ollama-data:
 
